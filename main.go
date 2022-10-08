@@ -14,7 +14,7 @@ func main() {
 		r := gee.New()
 		r.Use(gee.Logger())
 		r.LoadHTMLGlob("./frontend/*")
-		r.Static("/assets", "./gee/static")
+		r.Static("/assets", "./static")
 		r.GET("/web", func(ctx *gee.Context) {
 			ctx.HTML(http.StatusOK, "index.html", nil)
 		})
