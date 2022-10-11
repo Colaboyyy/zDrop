@@ -1,0 +1,157 @@
+package gee
+
+import (
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"html/template"
+	"net/http"
+	"path"
+	"strings"
+)
+
+type HandlerFunc func(ctx *Context)
+
+type RouterGroup struct {
+	prefix      string
+	middlewares []HandlerFunc
+	router      *router
+}
+
+type Engine struct {
+	*RouterGroup
+	groups        []*RouterGroup     // store all groups
+	htmlTemplates *template.Template // for html render -- 将所有的模板加载进内存
+	funcMap       template.FuncMap   // for html render -- 所有的自定义模板渲染函数
+	// UseH2C enable h2c support.
+	UseH2C bool
+}
+
+// New is the constructor of gee.Engine
+func New() *Engine {
+	engine := &Engine{}
+	engine.RouterGroup = &RouterGroup{router: newRouter()}
+	engine.groups = []*RouterGroup{engine.RouterGroup}
+	return engine
+}
+
+// Group is defined to create a new RouterGroup
+// remember all groups share the same Engine instance
+func (group *RouterGroup) Group(prefix string) *RouterGroup {
+	newGroup := &RouterGroup{
+		prefix: group.prefix + prefix,
+		router: group.router,
+	}
+	return newGroup
+}
+
+func (group *RouterGroup) addRoute(method string, comp string, handler HandlerFunc) {
+	pattern := group.prefix + comp
+	group.router.addRoute(method, pattern, handler)
+}
+
+func (group *RouterGroup) GET(pattern string, handler HandlerFunc) {
+	group.addRoute("GET", pattern, handler)
+}
+
+func (group *RouterGroup) POST(pattern string, handler HandlerFunc) {
+	group.addRoute("POST", pattern, handler)
+}
+
+func (group *RouterGroup) HEAD(pattern string, handler HandlerFunc) {
+	group.addRoute("HEAD", pattern, handler)
+}
+
+func (engine *Engine) Handler() http.Handler {
+	if !engine.UseH2C {
+		return engine
+	}
+
+	h2s := &http2.Server{}
+	return h2c.NewHandler(engine, h2s)
+}
+
+func (engine *Engine) RUN(addr string) (err error) {
+	return http.ListenAndServe(addr, engine.Handler())
+}
+
+// Use is defined to add middleware to the group
+func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
+	group.middlewares = append(group.middlewares, middlewares...)
+}
+
+func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	var middlewares []HandlerFunc
+	for _, group := range engine.groups {
+		if strings.HasPrefix(req.URL.Path, group.prefix) {
+			middlewares = append(middlewares, group.middlewares...)
+		}
+	}
+
+	c := newContext(w, req)
+	c.handlers = middlewares
+	c.engine = engine
+	engine.router.handle(c)
+}
+
+func (group *RouterGroup) calculateAbsolutePath(relativePath string) string {
+	return joinPaths(group.prefix, relativePath)
+}
+
+// create static handler
+func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {
+	//absolutePath := path.Join(group.prefix, relativePath)
+	absolutePath := group.calculateAbsolutePath(relativePath)
+	fileServer := http.StripPrefix(absolutePath, http.FileServer(fs))
+	return func(ctx *Context) {
+
+		file := ctx.Param("filepath")
+		// Check if file exists and/or if we have permission to access it
+		f, err := fs.Open(file)
+		if err != nil {
+			ctx.Status(http.StatusNotFound)
+			ctx.index = -1
+			return
+		}
+		f.Close()
+		fileServer.ServeHTTP(ctx.Writer, ctx.Req)
+	}
+}
+
+// serve static files
+func (group *RouterGroup) Static(relativePath string, root string) {
+	handler := group.createStaticHandler(relativePath, http.Dir(root))
+	urlPattern := path.Join(relativePath, "/*filepath")
+	// Register GET handlers
+	group.GET(urlPattern, handler)
+	group.HEAD(urlPattern, handler)
+}
+
+func (group *RouterGroup) StaticFs(relativePath string, fs http.FileSystem) {
+	if strings.Contains(relativePath, ":") || strings.Contains(relativePath, "*") {
+		panic("URL parameters can not be used when serving a static folder")
+	}
+	handler := group.createStaticHandler(relativePath, fs)
+	urlPattern := path.Join(relativePath, "/*filepath")
+
+	// Register GET and HEAD handlers
+	group.GET(urlPattern, handler)
+	group.HEAD(urlPattern, handler)
+}
+
+// ---HTML---
+// SetFuncMap 自定义渲染函数
+func (engine *Engine) SetFuncMap(funcMap template.FuncMap) {
+	engine.funcMap = funcMap
+}
+
+// 加载模板的方法
+func (engine *Engine) LoadHTMLGlob(pattern string) {
+	engine.htmlTemplates = template.Must(template.New("").Funcs(engine.funcMap).ParseGlob(pattern))
+}
+
+// 默认实例使用 Logger 和 Recovery 中间件。
+func Default() *Engine {
+	engine := New()
+	engine.Use(Logger(), Recovery())
+	return engine
+}
