@@ -9,12 +9,14 @@ import (
 	"strings"
 )
 
-type HandlerFunc func(ctx *Context)
+type HandlerFunc func(c *Context)
 
 type RouterGroup struct {
+	Handlers    []HandlerFunc
 	prefix      string
 	middlewares []HandlerFunc
 	router      *router
+	engine      *Engine
 }
 
 type Engine struct {
@@ -22,6 +24,8 @@ type Engine struct {
 	groups        []*RouterGroup     // store all groups
 	htmlTemplates *template.Template // for html render -- 将所有的模板加载进内存
 	funcMap       template.FuncMap   // for html render -- 所有的自定义模板渲染函数
+	noRoute       []HandlerFunc
+	allNoRoute    []HandlerFunc
 	// UseH2C enable h2c support.
 	UseH2C bool
 }
@@ -31,6 +35,7 @@ func New() *Engine {
 	engine := &Engine{}
 	engine.RouterGroup = &RouterGroup{router: newRouter()}
 	engine.groups = []*RouterGroup{engine.RouterGroup}
+	engine.RouterGroup.engine = engine
 	return engine
 }
 
@@ -45,8 +50,19 @@ func (group *RouterGroup) Group(prefix string) *RouterGroup {
 }
 
 func (group *RouterGroup) addRoute(method string, comp string, handler HandlerFunc) {
-	pattern := group.prefix + comp
+	//pattern := group.prefix + comp
+	pattern := group.calculateAbsolutePath(comp)
 	group.router.addRoute(method, pattern, handler)
+}
+
+// NoRoute adds handlers for NoRoute. It returns a 404 code by default.
+func (engine *Engine) NoRoute(handlers ...HandlerFunc) {
+	engine.noRoute = handlers
+	engine.rebuild404Handlers()
+}
+
+func (engine *Engine) rebuild404Handlers() {
+	engine.allNoRoute = engine.combineHandlers(engine.noRoute)
 }
 
 func (group *RouterGroup) GET(pattern string, handler HandlerFunc) {
@@ -93,6 +109,15 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	engine.router.handle(c)
 }
 
+func (group *RouterGroup) combineHandlers(handlers []HandlerFunc) []HandlerFunc {
+	finalSize := len(group.Handlers) + len(handlers)
+	assert1(finalSize < int(abortIndex), "too many handlers")
+	mergedHandlers := make([]HandlerFunc, finalSize)
+	copy(mergedHandlers, group.Handlers)
+	copy(mergedHandlers[len(group.Handlers):], handlers)
+	return mergedHandlers
+}
+
 func (group *RouterGroup) calculateAbsolutePath(relativePath string) string {
 	return joinPaths(group.prefix, relativePath)
 }
@@ -109,6 +134,7 @@ func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileS
 		f, err := fs.Open(file)
 		if err != nil {
 			ctx.Status(http.StatusNotFound)
+			ctx.handlers = group.engine.noRoute
 			ctx.index = -1
 			return
 		}
