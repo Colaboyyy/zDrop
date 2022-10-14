@@ -1,10 +1,12 @@
 package gee
 
 import (
+	"fmt"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"html/template"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 )
@@ -25,7 +27,9 @@ type Engine struct {
 	htmlTemplates *template.Template // for html render -- 将所有的模板加载进内存
 	funcMap       template.FuncMap   // for html render -- 所有的自定义模板渲染函数
 	noRoute       []HandlerFunc
+	noMethod      []HandlerFunc
 	allNoRoute    []HandlerFunc
+	allNoMethod   []HandlerFunc
 	// UseH2C enable h2c support.
 	UseH2C bool
 }
@@ -61,6 +65,11 @@ func (engine *Engine) NoRoute(handlers ...HandlerFunc) {
 	engine.rebuild404Handlers()
 }
 
+func (engine *Engine) NoMethod(handlers ...HandlerFunc) {
+	engine.noMethod = handlers
+	engine.rebuild405Handlers()
+}
+
 func (engine *Engine) rebuild404Handlers() {
 	engine.allNoRoute = engine.combineHandlers(engine.noRoute)
 }
@@ -90,22 +99,38 @@ func (engine *Engine) RUN(addr string) (err error) {
 	return http.ListenAndServe(addr, engine.Handler())
 }
 
+func (engine *Engine) Use(middleware ...HandlerFunc) {
+	engine.RouterGroup.Use(middleware...)
+	engine.rebuild404Handlers()
+	engine.rebuild405Handlers()
+}
+
 // Use is defined to add middleware to the group
 func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
 	group.middlewares = append(group.middlewares, middlewares...)
 }
 
-func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (engine *Engine) rebuild405Handlers() {
+	engine.allNoMethod = engine.combineHandlers(engine.noMethod)
+}
+
+func (engine *Engine) handleMidderwares(req *http.Request) []HandlerFunc {
 	var middlewares []HandlerFunc
 	for _, group := range engine.groups {
 		if strings.HasPrefix(req.URL.Path, group.prefix) {
 			middlewares = append(middlewares, group.middlewares...)
 		}
 	}
+	engine.middlewares = middlewares
+	return middlewares
+}
 
+func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := newContext(w, req)
-	c.handlers = middlewares
+	c.handlers = engine.handleMidderwares(req)
+	//c.handlers = engine.allNoRoute
 	c.engine = engine
+
 	engine.router.handle(c)
 }
 
@@ -172,6 +197,7 @@ func (engine *Engine) SetFuncMap(funcMap template.FuncMap) {
 
 // 加载模板的方法
 func (engine *Engine) LoadHTMLGlob(pattern string) {
+	fmt.Println(os.Executable())
 	engine.htmlTemplates = template.Must(template.New("").Funcs(engine.funcMap).ParseGlob(pattern))
 }
 

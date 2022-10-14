@@ -11,14 +11,19 @@ import (
 	"strings"
 )
 
-//go:embed dist/*
+//go:embed frontend/dict/*
 var Fs embed.FS
 
 func main() {
 	r := gee.New()
 	r.Use(gee.Logger())
-	staticFiles, _ := fs.Sub(Fs, "dist")
-	r.StaticFs("/static", http.FS(staticFiles))
+	staticFiles, _ := fs.Sub(Fs, "frontend/dict")
+	//r.StaticFs("/static", http.FS(staticFiles))
+	r.LoadHTMLGlob("/Users/tommyyzhang/GolandProjects/zDrop/frontend/dict/index.html")
+	r.Static("/assets", "./frontend/dict/assets")
+	r.GET("/static", func(ctx *gee.Context) {
+		ctx.HTML(http.StatusOK, "index.html", nil)
+	})
 	//service.RUN(r)
 	v1 := r.Group("/api/v1")
 	{
@@ -41,12 +46,12 @@ func main() {
 			log.Println("--HasPrefix static")
 			reader, err := staticFiles.Open("index.html")
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("staticFiles.Open failed, ", err)
 			}
 			defer reader.Close()
 			_, err = reader.Stat()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal("reader.Stat failed, ", err)
 			}
 			c.DataFromReader(http.StatusOK, "text/html;charset=utf-8", reader, nil)
 		} else {

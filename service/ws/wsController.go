@@ -2,18 +2,18 @@ package ws
 
 import (
 	"gee"
-	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
 )
 
-var wsUpgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
+//var wsUpgrader = websocket.Upgrader{
+//	ReadBufferSize:  1024,
+//	WriteBufferSize: 1024,
+//}
 
 func httpHandler(hub *Hub, w http.ResponseWriter, r *http.Request) {
-	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	conn, err := upgrader.Upgrade(w, r, nil)
+	//conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("wsUpgrader.Upgrad error!", err)
 		return
@@ -28,5 +28,6 @@ func httpHandler(hub *Hub, w http.ResponseWriter, r *http.Request) {
 }
 
 func WsController(c *gee.Context, hub *Hub) {
+	c.Status(http.StatusOK)
 	httpHandler(hub, c.Writer, c.Req)
 }
