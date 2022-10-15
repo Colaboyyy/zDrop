@@ -19,7 +19,7 @@ func main() {
 	r.Use(gee.Logger())
 	staticFiles, _ := fs.Sub(Fs, "frontend/dict")
 	//r.StaticFs("/static", http.FS(staticFiles))
-	r.LoadHTMLGlob("/Users/tommyyzhang/GolandProjects/zDrop/frontend/dict/index.html")
+	r.LoadHTMLGlob("frontend/dict/index.html")
 	r.Static("/assets", "./frontend/dict/assets")
 	r.GET("/static", func(ctx *gee.Context) {
 		ctx.HTML(http.StatusOK, "index.html", nil)
@@ -41,6 +41,7 @@ func main() {
 		ws.WsController(c, hub)
 	})
 	r.NoRoute(func(c *gee.Context) {
+		log.Println("no route")
 		path := c.Req.URL.Path
 		if strings.HasPrefix(path, "/static/") {
 			log.Println("--HasPrefix static")

@@ -127,11 +127,13 @@ func (engine *Engine) handleMidderwares(req *http.Request) []HandlerFunc {
 
 func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := newContext(w, req)
-	c.handlers = engine.handleMidderwares(req)
+	var handlers = engine.handleMidderwares(req)
+	//c.handlers = append(handlers, engine.allNoRoute...)
 	//c.handlers = engine.allNoRoute
+	c.handlers = handlers
 	c.engine = engine
 
-	engine.router.handle(c)
+	engine.router.handle(c, engine)
 }
 
 func (group *RouterGroup) combineHandlers(handlers []HandlerFunc) []HandlerFunc {

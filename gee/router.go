@@ -2,7 +2,6 @@ package gee
 
 import (
 	"log"
-	"net/http"
 	"strings"
 )
 
@@ -76,16 +75,14 @@ func (r *router) getRoute(method string, path string) (*node, map[string]string)
 	return nil, nil
 }
 
-func (r *router) handle(c *Context) {
+func (r *router) handle(c *Context, e *Engine) {
 	n, params := r.getRoute(c.Method, c.Path)
 	if n != nil {
 		c.Params = params
 		key := c.Method + "-" + n.pattern
 		c.handlers = append(c.handlers, r.handlers[key])
 	} else {
-		c.handlers = append(c.handlers, func(ctx *Context) {
-			ctx.String(http.StatusNotFound, "404 NOT FOUND: %s\n", c.Path)
-		})
+		c.handlers = e.allNoRoute
 	}
 	c.Next()
 }
