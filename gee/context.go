@@ -166,3 +166,14 @@ func (c *Context) DataFromReader(code int, contentType string, reader io.Reader,
 		log.Fatal("reader error, ", err)
 	}
 }
+
+// ShouldBindWith binds the passed struct pointer using the specified binding engine.
+// See the binding package.
+func (c *Context) ShouldBindWith(obj any, b Binding) error {
+	return b.Bind(c.Req, obj)
+}
+
+// ShouldBindJSON is a shortcut for c.ShouldBindWith(obj, binding.JSON).
+func (c *Context) ShouldBindJSON(obj any) error {
+	return c.ShouldBindWith(obj, JSON)
+}
